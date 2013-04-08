@@ -28,6 +28,12 @@ class FSImage extends FSFile {
 		parent::__construct($filename);
 	}
 
+	public static function createBySource($content) {
+		$image = new self(tempnam(Yii::app()->runtimePath, 'image-'));
+		$image->setContent($content, false);
+		return $image;
+	}
+
 	/**
 	 * Create a GD image resource from file (JPEG, PNG, GIF support).
 	 *
@@ -63,8 +69,12 @@ class FSImage extends FSFile {
 	/**  @return int */
 	public function getImageType() {
 		if ($this->imageType === null) {
-			// determine image format
-			list(, , $this->imageType) = getimagesize($this->getFilename());
+			if (!empty($this->content)) {
+				list(, , $this->imageType) = getimagesizefromstring($this->content);
+			} else {
+				// determine image format
+				list(, , $this->imageType) = getimagesize($this->getFilename());
+			}
 		}
 		return $this->imageType;
 	}
@@ -89,6 +99,22 @@ class FSImage extends FSFile {
 			case IMAGETYPE_JPEG2000:
 			default:
 				return $this->toJpeg();
+		}
+	}
+
+	/**
+	 * @return string
+	 */
+	public function getExtension() {
+		switch ($this->getImageType()) {
+			case IMAGETYPE_PNG:
+				return 'png';
+			case IMAGETYPE_GIF:
+				return 'gif';
+			case IMAGETYPE_JPEG:
+			case IMAGETYPE_JPEG2000:
+			default:
+				return 'jpg';
 		}
 	}
 
