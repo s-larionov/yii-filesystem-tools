@@ -21,7 +21,7 @@ class FSFile {
 	}
 
 	public static function isAcceptableFilename($filename) {
-		return preg_match("/^[^\\/?*:;{}\\\\]+\\.[^\\/?*:;{}\\\\]{3}$/", $filename);
+		return preg_match("/^[^\\/?*:;{}\\\\]+(?:\\.[^\\/?*:;{}\\\\]{3})?$/", $filename);
 	}
 
 	/**
