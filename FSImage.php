@@ -60,6 +60,9 @@ class FSImage extends FSFile {
 			case IMAGETYPE_GIF:
 				$this->imageHandle = imagecreatefromgif($this->getFilename());
 				break;
+			case IMAGETYPE_BMP:
+				$this->imageHandle = imagecreatefrombmp($this->getFilename());
+				break;
 			default:
 				throw new FSImageException('Unsupported image type');
 		}
@@ -83,6 +86,9 @@ class FSImage extends FSFile {
 	 * @return string
 	 */
 	public function getMimeType() {
+		if (!(imagetypes() & $this->getImageType())) {
+			return image_type_to_mime_type(IMAGETYPE_JPEG);
+		}
 		return image_type_to_mime_type($this->getImageType());
 	}
 
@@ -143,7 +149,7 @@ class FSImage extends FSFile {
 
 	/**
 	 * @param resource $handle
-	 * @param int $quality
+	 * @param int      $quality
 	 * @throws FSImageException
 	 * @return string
 	 */
@@ -172,7 +178,7 @@ class FSImage extends FSFile {
 
 	/**
 	 * @param resource $handle
-	 * @param int $quality
+	 * @param int      $quality
 	 * @throws FSImageException
 	 * @return string
 	 */
@@ -191,14 +197,14 @@ class FSImage extends FSFile {
 	/**
 	 * Resize image
 	 *
-	 * @param int|null $width             Width of new image in pixels
-	 * @param int|null $height            Height of new image in pixels
-	 * @param int $method                 Method of resize image. @
-	 * @param int $fields                 self::RESIZE_WITHOUT_FIELDS or self::RESIZE_WITH_FIELDS
-	 * @param float $horizontalAlign      Horizontal position result image in original image (from 0 to 1)
-	 * @param float $verticalAlign        Vertical position result image in original image (from 0 to 1)
-	 * @param string $backgroundColor     Color in HEX format (XXXXXX, ex. FF0000 for red color).
-	 * @param bool $withoutLossOfQuality  If result size great than source, then if true - don't resize
+	 * @param int|null $width                  Width of new image in pixels
+	 * @param int|null $height                 Height of new image in pixels
+	 * @param int      $method                 Method of resize image. @
+	 * @param int      $fields                 self::RESIZE_WITHOUT_FIELDS or self::RESIZE_WITH_FIELDS
+	 * @param float    $horizontalAlign        Horizontal position result image in original image (from 0 to 1)
+	 * @param float    $verticalAlign          Vertical position result image in original image (from 0 to 1)
+	 * @param string   $backgroundColor        Color in HEX format (XXXXXX, ex. FF0000 for red color).
+	 * @param bool     $withoutLossOfQuality   If result size great than source, then if true - don't resize
 	 *
 	 * @throws FSImageException
 	 * @return FSImage
@@ -481,4 +487,96 @@ class FSImage extends FSFile {
 
 class FSImageException extends CException {
 
+}
+
+function imagecreatefrombmp($sFile) {
+	//    Load the image into a string
+	$file = fopen($sFile, "rb");
+	$read = fread($file, 10);
+	while (!feof($file) && ($read <> "")) {
+		$read .= fread($file, 1024);
+	}
+
+	$temp   = unpack("H*", $read);
+	$hex    = $temp[1];
+	$header = substr($hex, 0, 108);
+
+	//    Process the header
+	//    Structure: http://www.fastgraph.com/help/bmp_header_format.html
+	if (substr($header, 0, 4) == "424d") {
+		//    Cut it in parts of 2 bytes
+		$headerParts = str_split($header, 2);
+
+		//    Get the width        4 bytes
+		$width = hexdec($headerParts[19] . $headerParts[18]);
+
+		//    Get the height        4 bytes
+		$height = hexdec($headerParts[23] . $headerParts[22]);
+
+		//    Unset the header params
+		unset($headerParts);
+	}
+
+	//    Define starting X and Y
+	$x = 0;
+	$y = 1;
+
+	//    Create newimage
+	$image = imagecreatetruecolor($width, $height);
+
+	//    Grab the body from the image
+	$body = substr($hex, 108);
+
+	//    Calculate if padding at the end-line is needed
+	//    Divided by two to keep overview.
+	//    1 byte = 2 HEX-chars
+	$bodySize   = (strlen($body) / 2);
+	$headerSize = ($width * $height);
+
+	//    Use end-line padding? Only when needed
+	$usePadding = ($bodySize > ($headerSize * 3) + 4);
+
+	//    Using a for-loop with index-calculation instaid of str_split to avoid large memory consumption
+	//    Calculate the next DWORD-position in the body
+	for ($i = 0; $i < $bodySize; $i += 3) {
+		//    Calculate line-ending and padding
+		if ($x >= $width) {
+			//    If padding needed, ignore image-padding
+			//    Shift i to the ending of the current 32-bit-block
+			if ($usePadding) {
+				$i += $width % 4;
+			}
+
+			//    Reset horizontal position
+			$x = 0;
+
+			//    Raise the height-position (bottom-up)
+			$y++;
+
+			//    Reached the image-height? Break the for-loop
+			if ($y > $height) {
+				break;
+			}
+		}
+
+		//    Calculation of the RGB-pixel (defined as BGR in image-data)
+		//    Define $i_pos as absolute position in the body
+		$iPos = $i * 2;
+		$r     = hexdec($body[$iPos + 4] . $body[$iPos + 5]);
+		$g     = hexdec($body[$iPos + 2] . $body[$iPos + 3]);
+		$b     = hexdec($body[$iPos] . $body[$iPos + 1]);
+
+		//    Calculate and draw the pixel
+		$color = imagecolorallocate($image, $r, $g, $b);
+		imagesetpixel($image, $x, $height - $y, $color);
+
+		//    Raise the horizontal position
+		$x++;
+	}
+
+	//    Unset the body / free the memory
+	unset($body);
+
+	//    Return image-object
+	return $image;
 }
